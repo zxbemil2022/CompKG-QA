@@ -1,0 +1,43 @@
+entity_types:
+  Course:
+    description: 课程（如数据结构、操作系统）
+  Chapter:
+    description: 章节（如线性表、传输层、流水线）
+  Concept:
+    description: 核心概念/知识点
+  Method:
+    description: 方法、算法或操作步骤
+  Property:
+    description: 性质、指标或复杂度属性
+  Formula:
+    description: 公式、定理表达式
+  Example:
+    description: 例题、应用场景或案例
+
+relation_types:
+  BELONGS_TO:
+    description: 概念属于章节/课程
+  HAS_SUB:
+    description: 上位概念包含子概念
+  HAS_METHOD:
+    description: 概念对应的方法或实现算法
+  HAS_PROPERTY:
+    description: 概念具有的性质/特征
+  HAS_COMPLEXITY:
+    description: 算法或方法的复杂度属性
+  PREREQUISITE:
+    description: 学习前置依赖关系
+  CAUSE:
+    description: 因果关系（A 导致 B）
+  USED_IN:
+    description: 概念/方法在场景中的应用关系
+  EQUIVALENT:
+    description: 等价、近似等价或同义关系
+
+query_router_policy:
+  subject_level: [数据结构, 操作系统, 计算机网络, 计算机组成原理]
+  chapter_level:
+    数据结构: [线性表, 栈与队列, 树与图, 查找排序]
+    操作系统: [进程线程, 内存管理, 文件系统, 并发同步]
+    计算机网络: [应用层, 传输层, 网络层, 数据链路层]
+    计算机组成原理: [数据表示, 指令系统, 存储系统, 流水线]

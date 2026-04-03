@@ -1,0 +1,62 @@
+relations:
+  BELONGS_TO:
+    description: 概念/章节归属到上位章节或课程
+    inverse: HAS_SUB
+  HAS_SUB:
+    description: 上位知识点包含下位概念
+    inverse: BELONGS_TO
+  HAS_METHOD:
+    description: 概念对应实现方法、操作或算法
+  HAS_PROPERTY:
+    description: 概念具有的性质、特征或规则
+  HAS_COMPLEXITY:
+    description: 算法或方法复杂度描述
+  PREREQUISITE:
+    description: 前置知识依赖（学习路径）
+  CAUSE:
+    description: 因果关系（事件/机制导致结果）
+  USED_IN:
+    description: 知识点在题型、系统或场景中应用
+  EQUIVALENT:
+    description: 等价/近似等价/同义关系
+  DEPENDS_ON:
+    description: 机制、算法或模块之间的依赖关系
+  OPTIMIZED_BY:
+    description: 通过某优化策略提升性能或正确性
+  SOLVES:
+    description: 方法/算法解决特定问题
+  VERIFIED_BY:
+    description: 通过实验、证明或案例验证
+  MEASURED_BY:
+    description: 通过时间/空间/吞吐等指标度量
+  APPLIES_TO:
+    description: 知识点适用到场景、题型或系统
+
+entity_types:
+  - Course
+  - Chapter
+  - Concept
+  - Algorithm
+  - DataStructure
+  - Protocol
+  - SystemModule
+  - Method
+  - Property
+  - Complexity
+  - Formula
+  - Example
+  - Scenario
+  - Pitfall
+subjects:
+  - 数据结构
+  - 操作系统
+  - 计算机网络
+  - 计算机组成原理
+
+quality_rules:
+  - 三元组主体和客体必须是专业术语，避免口语化描述。
+  - 关系词必须来自 relations 受控词表。
+  - 每条三元组建议补充 h_type/t_type，且需属于 entity_types。
+  - 同一主体避免出现互相矛盾的复杂度、定义关系。
+  - 跨学科关系需在 subject 字段使用 A|B 格式。
+

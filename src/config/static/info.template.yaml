@@ -1,0 +1,26 @@
+# 单位信息配置文件
+# 用于配置网站的基本信息、品牌信息等
+
+# 组织信息
+organization:
+  name: "CS智析图谱"           # 完整组织名称
+  logo: "/favicon.svg"       # Logo文件路径（放在 web/public 目录下）
+  avatar: "/avatar.jpg"      # 头像文件路径（放在 web/public 目录下）
+  login_bg: "/login-bg.jpg"  # 登录背景图片路径（放在 web/public 目录下）
+
+# 项目信息
+branding:
+  name: "CompKG-QA"
+  title: "CompKG-QA: 计算机知识图谱问答系统"                           # 系统标题
+  subtitle: "大模型驱动的计算机知识图谱问答平台"          # 副标题
+  description: "融合向量检索与知识图谱，面向计算机领域提供可追溯问答"  # 描述信息
+
+# 功能特性
+features:
+  - "🧠 计算机知识图谱"
+  - "🕸️ 图谱+向量混合检索"
+  - "🤖 多模型问答"
+
+# 页脚信息
+footer:
+  copyright: "© 智析图谱 2026 v0.2.0"

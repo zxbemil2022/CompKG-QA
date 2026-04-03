@@ -1,0 +1,31 @@
+name: QA Regression Gate
+
+on:
+  pull_request:
+    branches: [ "**" ]
+    push:
+      branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  qa_regression_gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run QA regression gate
+        env:
+          QA_MIN_OVERALL: "0.70"
+          QA_MIN_CITATION: "0.65"
+        run: |
+          python examples/cs408/eval/run_qa_regression_gate.py \
+            --dataset examples/cs408/eval/qa_regression_predictions.dataset.jsonl \
+            --predictions examples/cs408/eval/qa_regression_predictions.template.jsonl \
+            --min-overall ${QA_MIN_OVERALL} \
+            --min-citation ${QA_MIN_CITATION}

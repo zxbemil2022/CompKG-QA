@@ -1,0 +1,4 @@
+{"id":"Q001","question":"TCP为什么需要三次握手？","subject":"计算机网络","chapter":"传输层","reference_answer":"三次握手用于确认双方收发能力并同步初始序列号，避免历史连接干扰。","gold_evidence_ids":["G001","G002"]}
+{"id":"Q002","question":"LRU页面置换算法的核心思想是什么？","subject":"操作系统","chapter":"内存管理","reference_answer":"优先淘汰最长时间未被访问的页面，以利用程序局部性。","gold_evidence_ids":["G001"]}
+{"id":"Q003","question":"流水线中的数据相关如何影响性能？","subject":"计算机组成原理","chapter":"流水线","reference_answer":"数据相关会导致流水线停顿或转发开销，降低吞吐率。","gold_evidence_ids":["G001","G003"]}
+{"id":"Q004","question":"为什么哈希表平均查找效率高？","subject":"数据结构","chapter":"查找排序","reference_answer":"通过散列函数将关键字映射到地址，平均情况下可接近O(1)查找。","gold_evidence_ids":["G002"]}
