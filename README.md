@@ -1,5 +1,5 @@
 <!-- <h1 align="center">基于多智能体和工作流的大模型的调研报告生成系统</h1> -->
-<h1 align="center">Museum-AI: 计算机知识图谱智能知识问答与多模态检索系统</h1>
+<h1 align="center">CompKG-QA: 计算机知识图谱智能知识问答与多模态检索系统</h1>
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
