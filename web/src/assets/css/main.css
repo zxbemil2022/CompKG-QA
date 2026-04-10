@@ -1,0 +1,91 @@
+@import './base.css';
+@import './sigma.css';
+@import './shorts.css';
+@import './dashboard.css';
+
+:root {
+  --header-height: 45px;
+  --min-width: 450px;
+}
+
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  position: relative;
+  font-weight: normal;
+}
+
+body {
+  display: flow-root;
+  min-height: 100vh;
+  color: var(--gray-900);
+  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans SC', 'Roboto', 'HarmonyOS Sans SC', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 15px;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background:
+    radial-gradient(1200px 600px at 90% -10%, rgba(52, 152, 219, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 0% 100%, rgba(80, 227, 194, 0.12), transparent 60%),
+    linear-gradient(135deg, #f6f9ff 0%, #ecf3ff 35%, #eef6fb 100%);
+}
+
+#app::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(transparent 95%, rgba(120, 160, 220, 0.08) 100%);
+  background-size: 100% 24px;
+  z-index: 0;
+}
+
+.ant-card,
+.ant-layout,
+.ant-drawer-content,
+.ant-modal-content {
+  backdrop-filter: blur(8px);
+  background: var(--tech-panel);
+  border: 1px solid rgba(122, 166, 255, 0.24);
+  box-shadow: 0 10px 30px rgba(14, 32, 78, 0.14), 0 0 0 1px var(--tech-glow) inset;
+}
+
+/* layout */
+
+.layout-container {
+  width: 100%;
+  padding: 0px 30px;
+
+  h2 {
+    margin: 20px 0 10px 0;
+  }
+}
+
+.iconfont {
+  max-width: 100%;
+  max-height: 100%;
+
+  &.icon-10 {
+    width: 10px;
+    height: 10px;
+  }
+
+  &.icon-16 {
+    width: 16px;
+    height: 16px;
+  }
+
+  &.icon-20 {
+    width: 20px;
+    height: 20px;
+  }
+
+  &.icon-24 {
+    width: 24px;
+    height: 24px;
+  }
+}

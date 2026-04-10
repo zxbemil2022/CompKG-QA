@@ -1,0 +1,32 @@
+[
+  {
+    "subject": "数据结构",
+    "topic": "二叉排序树",
+    "definition": "左子树所有关键字小于根节点，右子树所有关键字大于根节点。",
+    "related_topics": ["AVL树", "红黑树", "B树", "B+树"],
+    "complexity": {
+      "search_avg": "O(log n)",
+      "search_worst": "O(n)"
+    }
+  },
+  {
+    "subject": "操作系统",
+    "topic": "虚拟内存",
+    "definition": "通过页表把虚拟地址映射到物理地址，实现内存扩展与隔离。",
+    "algorithms": ["LRU", "FIFO", "Clock"],
+    "related_topics": ["TLB", "页面置换算法", "缺页异常"]
+  },
+  {
+    "subject": "计算机网络",
+    "topic": "TCP三次握手",
+    "steps": ["SYN", "SYN+ACK", "ACK"],
+    "purpose": "建立可靠连接并同步初始序列号。",
+    "related_topics": ["滑动窗口", "拥塞控制", "重传机制"]
+  },
+  {
+    "subject": "计算机组成原理",
+    "topic": "Cache",
+    "definition": "利用局部性原理，以较小高速存储器提升平均访存性能。",
+    "related_topics": ["主存", "TLB", "命中率", "替换策略"]
+  }
+]

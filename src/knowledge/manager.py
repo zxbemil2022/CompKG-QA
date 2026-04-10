@@ -1,0 +1,585 @@
+import asyncio
+import json
+import os
+
+from src import config
+from src.knowledge.base import KBNotFoundError, KnowledgeBase
+from src.knowledge.config.domain_entity_config import get_domain_entity_relation_config, get_supported_domains
+from src.knowledge.factory import KnowledgeBaseFactory
+from src.models.rerank import get_reranker
+from src.utils import logger
+from src.utils.datetime_utils import coerce_any_to_utc_datetime, utc_isoformat
+
+
+class KnowledgeBaseManager:
+    """
+    知识库管理器
+
+    统一管理多种类型的知识库实例，提供统一的外部接口
+    """
+
+    def __init__(self, work_dir: str):
+        """
+        初始化知识库管理器
+
+        Args:
+            work_dir: 工作目录
+        """
+        self.work_dir = work_dir
+        os.makedirs(work_dir, exist_ok=True)
+
+        # 知识库实例缓存 {kb_type: kb_instance}
+        self.kb_instances: dict[str, KnowledgeBase] = {}
+
+        # 全局数据库元信息 {db_id: metadata_with_kb_type}
+        self.global_databases_meta: dict[str, dict] = {}
+
+        # 元数据锁
+        self._metadata_lock = asyncio.Lock()
+
+        # 加载全局元数据
+        self._load_global_metadata()
+        self._normalize_global_metadata()
+
+        # 初始化已存在的知识库实例
+        self._initialize_existing_kbs()
+
+        logger.info("KnowledgeBaseManager initialized")
+
+    def _load_global_metadata(self):
+        """加载全局元数据"""
+        meta_file = os.path.join(self.work_dir, "global_metadata.json")
+        if os.path.exists(meta_file):
+            try:
+                with open(meta_file, encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.global_databases_meta = data.get("databases", {})
+                logger.info(f"Loaded global metadata for {len(self.global_databases_meta)} databases")
+            except Exception as e:
+                logger.error(f"Failed to load global metadata: {e}")
+
+    def _save_global_metadata(self):
+        """保存全局元数据"""
+        meta_file = os.path.join(self.work_dir, "global_metadata.json")
+        data = {"databases": self.global_databases_meta, "updated_at": utc_isoformat(), "version": "2.0"}
+        with open(meta_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def _normalize_global_metadata(self) -> None:
+        """Normalize stored timestamps within the global metadata cache."""
+        for meta in self.global_databases_meta.values():
+            if "created_at" in meta:
+                try:
+                    dt_value = coerce_any_to_utc_datetime(meta.get("created_at"))
+                    if dt_value:
+                        meta["created_at"] = utc_isoformat(dt_value)
+                        continue
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"Failed to normalize database metadata timestamp {meta.get('created_at')!r}: {exc}")
+
+    def _initialize_existing_kbs(self):
+        """初始化已存在的知识库实例"""
+        kb_types_in_use = set()
+        for db_meta in self.global_databases_meta.values():
+            kb_type = db_meta.get("kb_type", "lightrag")  # 默认为lightrag
+            kb_types_in_use.add(kb_type)
+
+        # 为每种使用中的知识库类型创建实例
+        for kb_type in kb_types_in_use:
+            try:
+                self._get_or_create_kb_instance(kb_type)
+            except Exception as e:
+                logger.error(f"Failed to initialize {kb_type} knowledge base: {e}")
+
+    def _get_or_create_kb_instance(self, kb_type: str) -> KnowledgeBase:
+        """
+        获取或创建知识库实例
+
+        Args:
+            kb_type: 知识库类型
+
+        Returns:
+            知识库实例
+        """
+        if kb_type in self.kb_instances:
+            return self.kb_instances[kb_type]
+
+        # 创建新的知识库实例
+        kb_work_dir = os.path.join(self.work_dir, f"{kb_type}_data")
+        kb_instance = KnowledgeBaseFactory.create(kb_type, kb_work_dir)
+
+        self.kb_instances[kb_type] = kb_instance
+        logger.info(f"Created {kb_type} knowledge base instance")
+        return kb_instance
+
+    def _get_kb_for_database(self, db_id: str) -> KnowledgeBase:
+        """
+        根据数据库ID获取对应的知识库实例
+
+        Args:
+            db_id: 数据库ID
+
+        Returns:
+            知识库实例
+
+        Raises:
+            KBNotFoundError: 数据库不存在或知识库类型不支持
+        """
+        if db_id not in self.global_databases_meta:
+            raise KBNotFoundError(f"Database {db_id} not found")
+
+        kb_type = self.global_databases_meta[db_id].get("kb_type", "lightrag")
+
+        if not KnowledgeBaseFactory.is_type_supported(kb_type):
+            raise KBNotFoundError(f"Unsupported knowledge base type: {kb_type}")
+
+        return self._get_or_create_kb_instance(kb_type)
+
+    # =============================================================================
+    # 统一的外部接口 - 与原始 LightRagBasedKB 兼容
+    # =============================================================================
+
+    def get_kb(self, db_id: str) -> KnowledgeBase:
+        """Public accessor to fetch the underlying knowledge base instance by database id.
+
+        This provides a simple compatibility layer for callers that expect a
+        `get_kb` method on the manager.
+        """
+        return self._get_kb_for_database(db_id)
+
+    def get_databases(self) -> dict:
+        """获取所有数据库信息"""
+        all_databases = []
+
+        # 收集所有知识库的数据库信息
+        for kb_type, kb_instance in self.kb_instances.items():
+            kb_databases = kb_instance.get_databases()["databases"]
+            all_databases.extend(kb_databases)
+
+        return {"databases": all_databases}
+
+    async def create_database(
+        self, database_name: str, description: str, kb_type: str, embed_info: dict | None = None, **kwargs
+    ) -> dict:
+        """
+        创建数据库
+
+        Args:
+            database_name: 数据库名称
+            description: 数据库描述
+            kb_type: 知识库类型，默认为lightrag
+            embed_info: 嵌入模型信息
+            **kwargs: 其他配置参数，包括chunk_size和chunk_overlap
+
+        Returns:
+            数据库信息字典
+        """
+        if not KnowledgeBaseFactory.is_type_supported(kb_type):
+            available_types = list(KnowledgeBaseFactory.get_available_types().keys())
+            raise ValueError(f"Unsupported knowledge base type: {kb_type}. Available types: {available_types}")
+
+        kb_instance = self._get_or_create_kb_instance(kb_type)
+
+        db_info = kb_instance.create_database(database_name, description, embed_info, **kwargs)
+        db_id = db_info["db_id"]
+
+        async with self._metadata_lock:
+            self.global_databases_meta[db_id] = {
+                "name": database_name,
+                "description": description,
+                "kb_type": kb_type,
+                "created_at": utc_isoformat(),
+                "additional_params": kwargs.copy(),
+            }
+            self._save_global_metadata()
+
+        logger.info(f"Created {kb_type} database: {database_name} ({db_id}) with {kwargs}")
+        return db_info
+
+    async def delete_database(self, db_id: str) -> dict:
+        """删除数据库"""
+        try:
+            kb_instance = self._get_kb_for_database(db_id)
+            result = kb_instance.delete_database(db_id)
+
+            async with self._metadata_lock:
+                if db_id in self.global_databases_meta:
+                    del self.global_databases_meta[db_id]
+                    self._save_global_metadata()
+
+            return result
+        except KBNotFoundError as e:
+            logger.warning(f"Database {db_id} not found during deletion: {e}")
+            return {"message": "删除成功"}
+
+    async def add_content(self, db_id: str, items: list[str], params: dict | None = None) -> list[dict]:
+        """添加内容（文件/URL）"""
+        kb_instance = self._get_kb_for_database(db_id)
+        return await kb_instance.add_content(db_id, items, params or {})
+
+    async def add_image_embeddings(self, db_id: str, items: list[str], params: dict | None = None) -> list[dict]:
+        """添加图片嵌入"""
+        kb_instance = self._get_kb_for_database(db_id)
+        return await kb_instance.add_image_embeddings(db_id, items, params or {})
+
+    async def aquery(self, query_text: str, db_id: str, **kwargs) -> list[dict]:
+        """异步查询知识库"""
+        kb_instance = self._get_kb_for_database(db_id)
+        
+        # 执行基础查询
+        results = await kb_instance.aquery(db_id, query_text,**kwargs)
+        
+        # 检查是否启用重排序功能
+        if config.enable_reranker and results:
+            try:
+                # 获取重排序器实例
+                reranker = get_reranker(config.reranker)
+                
+                # 准备重排序输入：查询文本和所有检索结果的文本内容
+                sentences = [result["content"] for result in results]
+                sentence_pairs = (query_text, sentences)
+                
+                # 计算重排序分数
+                rerank_scores = reranker.compute_score(sentence_pairs, normalize=True)
+                
+                # 将重排序分数添加到结果中
+                for i, result in enumerate(results):
+                    if i < len(rerank_scores):
+                        result["rerank_score"] = rerank_scores[i]
+                    else:
+                        result["rerank_score"] = 0.0
+                
+                logger.debug(f"Applied reranking to {len(results)} results")
+                
+            except Exception as e:
+                logger.warning(f"Reranking failed: {e}")
+                # 重排序失败时，为所有结果添加默认的重排序分数
+                for result in results:
+                    result["rerank_score"] = result.get("score", 0.0)
+        
+        return results
+
+    async def export_data(self, db_id: str, format: str = "zip", **kwargs) -> str:
+        """导出知识库数据"""
+        kb_instance = self._get_kb_for_database(db_id)
+        return await kb_instance.export_data(db_id, format=format, **kwargs)
+
+    def query(self, query_text: str, db_id: str, **kwargs) -> str:
+        """同步查询知识库（兼容性方法）"""
+        kb_instance = self._get_kb_for_database(db_id)
+        return kb_instance.query(query_text, db_id, **kwargs)
+
+    def get_database_info(self, db_id: str) -> dict | None:
+        """获取数据库详细信息"""
+        try:
+            kb_instance = self._get_kb_for_database(db_id)
+            db_info = kb_instance.get_database_info(db_id)
+
+            # 添加全局元数据中的additional_params信息
+            if db_info and db_id in self.global_databases_meta:
+                global_meta = self.global_databases_meta[db_id]
+                additional_params = global_meta.get("additional_params", {})
+                if additional_params:
+                    db_info["additional_params"] = additional_params
+
+            return db_info
+        except KBNotFoundError:
+            return None
+
+    async def delete_file(self, db_id: str, file_id: str) -> None:
+        """删除文件"""
+        kb_instance = self._get_kb_for_database(db_id)
+        await kb_instance.delete_file(db_id, file_id)
+
+    async def get_file_basic_info(self, db_id: str, file_id: str) -> dict:
+        """获取文件基本信息（仅元数据）"""
+        kb_instance = self._get_kb_for_database(db_id)
+        return await kb_instance.get_file_basic_info(db_id, file_id)
+
+    async def get_file_content(self, db_id: str, file_id: str) -> dict:
+        """获取文件内容信息（chunks和lines）"""
+        kb_instance = self._get_kb_for_database(db_id)
+        return await kb_instance.get_file_content(db_id, file_id)
+
+    async def get_file_info(self, db_id: str, file_id: str) -> dict:
+        """获取文件完整信息（基本信息+内容信息）- 保持向后兼容"""
+        kb_instance = self._get_kb_for_database(db_id)
+        return await kb_instance.get_file_info(db_id, file_id)
+
+    async def rebuild_file_graph(self, db_id: str, file_id: str, params: dict | None = None) -> dict:
+        """对单个文件手动重建图谱（优先用于 lightrag 失败补图）。"""
+        kb_instance = self._get_kb_for_database(db_id)
+        rebuild_method = getattr(kb_instance, "rebuild_file_graph", None)
+        if not callable(rebuild_method):
+            raise ValueError(f"当前知识库类型 {kb_instance.kb_type} 不支持手动重建图谱")
+        return await rebuild_method(db_id, file_id, params or {})
+
+    def get_db_upload_path(self, db_id: str | None = None) -> str:
+        """获取数据库上传路径"""
+        if db_id:
+            try:
+                kb_instance = self._get_kb_for_database(db_id)
+                return kb_instance.get_db_upload_path(db_id)
+            except KBNotFoundError:
+                # 如果数据库不存在，创建通用上传路径
+                pass
+
+        # 通用上传路径
+        general_uploads = os.path.join(self.work_dir, "uploads")
+        os.makedirs(general_uploads, exist_ok=True)
+        return general_uploads
+
+    def file_existed_in_db(self, db_id: str | None, content_hash: str | None) -> bool:
+        """检查指定数据库中是否存在相同内容哈希的文件"""
+        if not db_id or not content_hash:
+            return False
+
+        try:
+            kb_instance = self._get_kb_for_database(db_id)
+        except KBNotFoundError:
+            return False
+
+        for file_info in kb_instance.files_meta.values():
+            if file_info.get("database_id") != db_id:
+                continue
+            if file_info.get("content_hash") == content_hash:
+                return True
+
+        return False
+
+    async def update_database(self, db_id: str, name: str, description: str) -> dict:
+        """更新数据库"""
+        kb_instance = self._get_kb_for_database(db_id)
+        result = kb_instance.update_database(db_id, name, description)
+
+        async with self._metadata_lock:
+            if db_id in self.global_databases_meta:
+                self.global_databases_meta[db_id]["name"] = name
+                self.global_databases_meta[db_id]["description"] = description
+                self._save_global_metadata()
+
+        return result
+
+    def get_retrievers(self) -> dict[str, dict]:
+        """获取所有检索器"""
+        all_retrievers = {}
+
+        # 收集所有知识库的检索器
+        for kb_instance in self.kb_instances.values():
+            retrievers = kb_instance.get_retrievers()
+            all_retrievers.update(retrievers)
+
+        return all_retrievers
+
+    # =============================================================================
+    # 管理器特有的方法
+    # =============================================================================
+
+    def get_supported_kb_types(self) -> dict[str, dict]:
+        """获取支持的知识库类型"""
+        return KnowledgeBaseFactory.get_available_types()
+
+    def get_kb_instance_info(self) -> dict[str, dict]:
+        """获取知识库实例信息"""
+        info = {}
+        for kb_type, kb_instance in self.kb_instances.items():
+            info[kb_type] = {
+                "work_dir": kb_instance.work_dir,
+                "database_count": len(kb_instance.databases_meta),
+                "file_count": len(kb_instance.files_meta),
+            }
+        return info
+
+    def get_supported_ontology_domains(self) -> dict[str, dict]:
+        """获取可选领域本体。"""
+        return get_supported_domains()
+
+    async def get_database_ontology(self, db_id: str) -> dict:
+        """获取指定数据库的本体配置。"""
+        kb_instance = self._get_kb_for_database(db_id)
+        if kb_instance.kb_type != "lightrag":
+            raise ValueError("Only lightrag databases support ontology configuration")
+
+        db_meta = kb_instance.databases_meta.get(db_id, {})
+        metadata = db_meta.get("metadata", {}) or {}
+        addon_params = metadata.get("addon_params", {}) if isinstance(metadata.get("addon_params"), dict) else {}
+        domain = addon_params.get("domain") or metadata.get("domain") or "computer"
+        defaults = get_domain_entity_relation_config(domain)
+
+        return {
+            "db_id": db_id,
+            "domain": domain,
+            "entity_types": addon_params.get("entity_types") or defaults["entity_types"],
+            "relation_types": addon_params.get("relation_types") or defaults["relation_types"],
+            "kg_ner_plugin": addon_params.get("kg_ner_plugin", "rule"),
+            "kg_re_plugin": addon_params.get("kg_re_plugin", "rule"),
+            "kg_ner_model_spec": addon_params.get("kg_ner_model_spec", ""),
+            "kg_re_model_spec": addon_params.get("kg_re_model_spec", ""),
+            "kg_ner_llm_enabled": bool(addon_params.get("kg_ner_llm_enabled", False)),
+            "kg_re_llm_enabled": bool(addon_params.get("kg_re_llm_enabled", False)),
+        }
+
+    async def update_database_ontology(
+        self,
+        db_id: str,
+        domain: str | None = None,
+        entity_types: list[str] | None = None,
+        relation_types: list[str] | None = None,
+        kg_ner_plugin: str | None = None,
+        kg_re_plugin: str | None = None,
+        kg_ner_model_spec: str | None = None,
+        kg_re_model_spec: str | None = None,
+        kg_ner_llm_enabled: bool | None = None,
+        kg_re_llm_enabled: bool | None = None,
+    ) -> dict:
+        """更新数据库级本体配置（lightrag）。"""
+        kb_instance = self._get_kb_for_database(db_id)
+        if kb_instance.kb_type != "lightrag":
+            raise ValueError("Only lightrag databases support ontology configuration")
+
+        db_meta = kb_instance.databases_meta.get(db_id)
+        if not db_meta:
+            raise KBNotFoundError(f"Database {db_id} not found")
+
+        metadata = db_meta.setdefault("metadata", {})
+        addon_params = metadata.setdefault("addon_params", {})
+
+        normalized_domain = (domain or addon_params.get("domain") or "computer").strip().lower()
+        domain_defaults = get_domain_entity_relation_config(normalized_domain)
+        addon_params["domain"] = normalized_domain
+        addon_params["entity_types"] = entity_types or addon_params.get("entity_types") or domain_defaults["entity_types"]
+        addon_params["relation_types"] = (
+            relation_types or addon_params.get("relation_types") or domain_defaults["relation_types"]
+        )
+        addon_params["kg_ner_plugin"] = kg_ner_plugin or addon_params.get("kg_ner_plugin") or "rule"
+        addon_params["kg_re_plugin"] = kg_re_plugin or addon_params.get("kg_re_plugin") or "rule"
+        if kg_ner_model_spec is not None:
+            addon_params["kg_ner_model_spec"] = kg_ner_model_spec
+        else:
+            addon_params.setdefault("kg_ner_model_spec", "")
+        if kg_re_model_spec is not None:
+            addon_params["kg_re_model_spec"] = kg_re_model_spec
+        else:
+            addon_params.setdefault("kg_re_model_spec", "")
+        if kg_ner_llm_enabled is not None:
+            addon_params["kg_ner_llm_enabled"] = bool(kg_ner_llm_enabled)
+        else:
+            addon_params.setdefault("kg_ner_llm_enabled", False)
+        if kg_re_llm_enabled is not None:
+            addon_params["kg_re_llm_enabled"] = bool(kg_re_llm_enabled)
+        else:
+            addon_params.setdefault("kg_re_llm_enabled", False)
+
+        kb_instance._save_metadata()
+        if db_id in self.global_databases_meta:
+            additional_params = self.global_databases_meta[db_id].setdefault("additional_params", {})
+            additional_params["domain"] = addon_params["domain"]
+            additional_params["entity_types"] = addon_params["entity_types"]
+            additional_params["relation_types"] = addon_params["relation_types"]
+            additional_params["kg_ner_plugin"] = addon_params["kg_ner_plugin"]
+            additional_params["kg_re_plugin"] = addon_params["kg_re_plugin"]
+            additional_params["kg_ner_model_spec"] = addon_params["kg_ner_model_spec"]
+            additional_params["kg_re_model_spec"] = addon_params["kg_re_model_spec"]
+            additional_params["kg_ner_llm_enabled"] = addon_params["kg_ner_llm_enabled"]
+            additional_params["kg_re_llm_enabled"] = addon_params["kg_re_llm_enabled"]
+            self._save_global_metadata()
+
+        # 重建实例使配置生效
+        if hasattr(kb_instance, "instances"):
+            kb_instance.instances.pop(db_id, None)
+
+        return await self.get_database_ontology(db_id)
+
+
+    def get_statistics(self) -> dict:
+        """获取统计信息"""
+        stats = {"total_databases": len(self.global_databases_meta), "kb_types": {}, "total_files": 0}
+
+        # 按知识库类型统计
+        for db_meta in self.global_databases_meta.values():
+            kb_type = db_meta.get("kb_type", "lightrag")
+            if kb_type not in stats["kb_types"]:
+                stats["kb_types"][kb_type] = 0
+            stats["kb_types"][kb_type] += 1
+
+        # 统计文件总数
+        for kb_instance in self.kb_instances.values():
+            stats["total_files"] += len(kb_instance.files_meta)
+
+        return stats
+
+    # =============================================================================
+    # 兼容性方法 - 为了支持现有的 graph_router.py
+    # =============================================================================
+
+    async def _get_lightrag_instance(self, db_id: str):
+        """
+        获取 LightRAG 实例（兼容性方法）
+
+        Args:
+            db_id: 数据库ID
+
+        Returns:
+            LightRAG 实例，如果数据库不是 lightrag 类型则返回 None
+
+        Raises:
+            ValueError: 如果数据库不存在或不是 lightrag 类型
+        """
+        try:
+            # 检查数据库是否存在
+            if db_id not in self.global_databases_meta:
+                logger.error(f"Database {db_id} not found in global metadata")
+                return None
+
+            # 检查是否是 LightRAG 类型
+            kb_type = self.global_databases_meta[db_id].get("kb_type", "lightrag")
+            if kb_type != "lightrag":
+                logger.error(f"Database {db_id} is not a LightRAG type (actual type: {kb_type})")
+                raise ValueError(f"Database {db_id} is not a LightRAG knowledge base")
+
+            # 获取 LightRAG 知识库实例
+            kb_instance = self._get_kb_for_database(db_id)
+
+            # 如果不是 LightRagKB 实例，返回错误
+            if not hasattr(kb_instance, "_get_lightrag_instance"):
+                logger.error(f"Knowledge base instance for {db_id} is not LightRagKB")
+                return None
+
+            # 调用 LightRagKB 的方法获取 LightRAG 实例
+            return await kb_instance._get_lightrag_instance(db_id)
+
+        except Exception as e:
+            logger.error(f"Failed to get LightRAG instance for {db_id}: {e}")
+            return None
+
+    def is_lightrag_database(self, db_id: str) -> bool:
+        """
+        检查数据库是否是 LightRAG 类型
+
+        Args:
+            db_id: 数据库ID
+
+        Returns:
+            是否是 LightRAG 类型的数据库
+        """
+        if db_id not in self.global_databases_meta:
+            return False
+
+        kb_type = self.global_databases_meta[db_id].get("kb_type", "lightrag")
+        return kb_type == "lightrag"
+
+    def get_lightrag_databases(self) -> list[dict]:
+        """
+        获取所有 LightRAG 类型的数据库
+
+        Returns:
+            LightRAG 数据库列表
+        """
+        lightrag_databases = []
+
+        all_databases = self.get_databases()["databases"]
+        for db in all_databases:
+            if db.get("kb_type", "lightrag") == "lightrag":
+                lightrag_databases.append(db)
+
+        return lightrag_databases

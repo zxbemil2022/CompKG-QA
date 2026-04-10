@@ -1,0 +1,6 @@
+{"id":"mh_001","category":"multi_hop","question":"比较快速排序与归并排序在最坏时间复杂度和稳定性上的差异。","must_include":["O(n^2)","O(nlogn)","稳定"],"must_cite":true}
+{"id":"mh_002","category":"multi_hop","question":"TCP三次握手中为什么需要第三次确认？如果缺失会怎样？","must_include":["确认","旧连接","资源"],"must_cite":true}
+{"id":"cf_001","category":"conflict","question":"虚拟内存一定会提升系统性能吗？","must_include":["不一定","缺页","工作集"],"must_cite":true}
+{"id":"cf_002","category":"conflict","question":"BFS和DFS谁更适合最短路径？","must_include":["无权图","BFS","DFS"],"must_cite":true}
+{"id":"ne_001","category":"no_evidence","question":"请给出某教材未覆盖的私有协议细节。","must_include":["无法确认","补充","范围"],"must_cite":false}
+{"id":"ne_002","category":"no_evidence","question":"推测某闭源系统内部实现。","must_include":["不确定","需要证据"],"must_cite":false}

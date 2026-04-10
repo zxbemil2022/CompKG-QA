@@ -1,0 +1,31 @@
+{
+  "node_count": 980,
+  "edge_count": 4810,
+  "subject_count": 4,
+  "subjects": [
+    "数据结构",
+    "操作系统",
+    "计算机网络",
+    "计算机组成原理"
+  ],
+  "allowed_entity_types": [
+    "Course",
+    "Chapter",
+    "Concept",
+    "Method",
+    "Property",
+    "Formula",
+    "Example"
+  ],
+  "allowed_relations": [
+    "BELONGS_TO",
+    "HAS_SUB",
+    "HAS_METHOD",
+    "HAS_PROPERTY",
+    "HAS_COMPLEXITY",
+    "PREREQUISITE",
+    "CAUSE",
+    "USED_IN",
+    "EQUIVALENT"
+  ]
+}
