@@ -125,6 +125,14 @@ SILICONFLOW_API_KEY=your_api_key
 OPENAI_API_KEY=your_api_key
 OPENAI_API_BASE=https://api.openai.com/v1
 
+推荐使用 硅基流动模型服务商
+通过邀请码注册可以获得免费获得13.99元的等额代金券
+邀请码
+aRchOB7R
+邀请链接
+https://cloud.siliconflow.cn/i/aRchOB7R
+
+
 # Neo4j 配置
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
